@@ -166,6 +166,65 @@ object RaidParser {
         )
     }
 
+    /**
+     * Classifies the detected raid composition.
+     */
+    fun classify(
+        bruiser: Long?,
+        hitmen: Long?,
+        bikers: Long?
+    ): String {
+
+        val total =
+            listOfNotNull(
+                bruiser,
+                hitmen,
+                bikers
+            ).sum()
+
+        if (total <= 0) {
+            return "Unknown"
+        }
+
+        val bruiserPct =
+            (bruiser ?: 0L) * 100.0 / total
+
+        val hitmenPct =
+            (hitmen ?: 0L) * 100.0 / total
+
+        val bikersPct =
+            (bikers ?: 0L) * 100.0 / total
+
+        val detected =
+            listOf(
+                "Bruiser" to bruiserPct,
+                "Hitmen/Sniper" to hitmenPct,
+                "Bikers" to bikersPct
+            ).filter { it.second > 0.0 }
+
+        if (detected.size == 1) {
+            return "${detected.first().first} raid"
+        }
+
+        val strongest =
+            detected.maxByOrNull { it.second }?.first
+                ?: return "Mixed raid"
+
+        return when {
+            bruiserPct >= 70.0 ->
+                "Bruiser-heavy raid"
+
+            hitmenPct >= 70.0 ->
+                "Hitmen/Sniper-heavy raid"
+
+            bikersPct >= 70.0 ->
+                "Biker-heavy raid"
+
+            else ->
+                "Mixed raid — $strongest strongest"
+        }
+    }
+
     private fun findNearbyNumber(
         text: String,
         names: List<String>
@@ -209,7 +268,7 @@ object RaidParser {
 
                     if (
                         value != null &&
-                        value in 1..3_500_000
+                        value in 1L..3_500_000L
                     ) {
                         return value
                     }
@@ -229,29 +288,37 @@ object RaidParser {
             raw
                 .replace(",", "")
                 .replace(" ", "")
+                .lowercase()
 
         return try {
 
             when {
 
-                value.endsWith("m", true) -> {
+                value.endsWith("m") -> {
                     (
                         value
                             .dropLast(1)
                             .toDouble() *
-                            1_000_000
+                            1_000_000.0
                     ).toLong()
                 }
 
-                value.endsWith("k", true) -> {
+                value.endsWith("k") -> {
                     (
                         value
                             .dropLast(1)
                             .toDouble() *
-                            1_000
+                            1_000.0
                     ).toLong()
                 }
 
                 else -> {
-                    value
-                       
+                    value.toLong()
+                }
+            }
+
+        } catch (_: NumberFormatException) {
+            null
+        }
+    }
+}
