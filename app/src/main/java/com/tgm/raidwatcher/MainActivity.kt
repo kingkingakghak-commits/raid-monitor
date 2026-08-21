@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Button
@@ -15,8 +14,8 @@ import androidx.core.content.ContextCompat
 class MainActivity : Activity() {
 
     companion object {
-        private const val SCREEN_CAPTURE_REQUEST = 1001
-        private const val OVERLAY_REQUEST = 1002
+        private const val OVERLAY_REQUEST = 1001
+        private const val CAPTURE_REQUEST = 1002
     }
 
     private lateinit var statusText: TextView
@@ -49,11 +48,8 @@ class MainActivity : Activity() {
 
         if (!Settings.canDrawOverlays(this)) {
 
-            Toast.makeText(
-                this,
-                "Please allow display over other apps",
-                Toast.LENGTH_LONG
-            ).show()
+            statusText.text =
+                "Allow display over other apps"
 
             val intent = Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -73,35 +69,21 @@ class MainActivity : Activity() {
 
     private fun requestScreenCapture() {
 
-        try {
+        val manager =
+            getSystemService(
+                MEDIA_PROJECTION_SERVICE
+            ) as MediaProjectionManager
 
-            val manager =
-                getSystemService(
-                    MEDIA_PROJECTION_SERVICE
-                ) as MediaProjectionManager
+        val intent =
+            manager.createScreenCaptureIntent()
 
-            val captureIntent =
-                manager.createScreenCaptureIntent()
-
-            startActivityForResult(
-                captureIntent,
-                SCREEN_CAPTURE_REQUEST
-            )
-
-        } catch (e: Exception) {
-
-            statusText.text =
-                "Screen capture could not start"
-
-            Toast.makeText(
-                this,
-                "Screen capture error: ${e.message}",
-                Toast.LENGTH_LONG
-            ).show()
-        }
+        startActivityForResult(
+            intent,
+            CAPTURE_REQUEST
+        )
     }
 
-    @Deprecated("Deprecated in Android API")
+    @Deprecated("Deprecated Android API")
     override fun onActivityResult(
         requestCode: Int,
         resultCode: Int,
@@ -113,33 +95,31 @@ class MainActivity : Activity() {
             data
         )
 
-        when (requestCode) {
+        if (requestCode == OVERLAY_REQUEST) {
 
-            OVERLAY_REQUEST -> {
-
-                if (Settings.canDrawOverlays(this)) {
-                    requestScreenCapture()
-                } else {
-                    statusText.text =
-                        "Floating-window permission is required"
-                }
+            if (Settings.canDrawOverlays(this)) {
+                requestScreenCapture()
+            } else {
+                statusText.text =
+                    "Overlay permission required"
             }
 
-            SCREEN_CAPTURE_REQUEST -> {
+            return
+        }
 
-                if (
-                    resultCode == RESULT_OK &&
-                    data != null
-                ) {
-                    startCaptureService(
-                        resultCode,
-                        data
-                    )
-                } else {
+        if (requestCode == CAPTURE_REQUEST) {
 
-                    statusText.text =
-                        "Screen capture permission cancelled"
-                }
+            if (
+                resultCode == RESULT_OK &&
+                data != null
+            ) {
+                startCaptureService(
+                    resultCode,
+                    data
+                )
+            } else {
+                statusText.text =
+                    "Screen capture cancelled"
             }
         }
     }
@@ -149,39 +129,32 @@ class MainActivity : Activity() {
         data: Intent
     ) {
 
-        try {
+        val intent =
+            Intent(
+                this,
+                CaptureService::class.java
+            ).apply {
 
-            val serviceIntent =
-                Intent(
-                    this,
-                    CaptureService::class.java
-                ).apply {
-
-                    putExtra(
-                        CaptureService.CODE,
-                        resultCode
-                    )
-
-                    putExtra(
-                        CaptureService.DATA,
-                        data
-                    )
-                }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-
-                ContextCompat.startForegroundService(
-                    this,
-                    serviceIntent
+                putExtra(
+                    CaptureService.CODE,
+                    resultCode
                 )
 
-            } else {
-
-                startService(serviceIntent)
+                putExtra(
+                    CaptureService.DATA,
+                    data
+                )
             }
 
+        try {
+
+            ContextCompat.startForegroundService(
+                this,
+                intent
+            )
+
             statusText.text =
-                "Raid Monitor is running"
+                "🟢 Raid Monitor started"
 
             startButton.isEnabled = false
             stopButton.isEnabled = true
@@ -189,11 +162,11 @@ class MainActivity : Activity() {
         } catch (e: Exception) {
 
             statusText.text =
-                "Failed to start monitor"
+                "❌ Failed to start monitor"
 
             Toast.makeText(
                 this,
-                "Monitor error: ${e.message}",
+                e.message ?: "Unknown error",
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -201,20 +174,15 @@ class MainActivity : Activity() {
 
     private fun stopMonitor() {
 
-        try {
-
-            stopService(
-                Intent(
-                    this,
-                    CaptureService::class.java
-                )
+        stopService(
+            Intent(
+                this,
+                CaptureService::class.java
             )
-
-        } catch (_: Exception) {
-        }
+        )
 
         statusText.text =
-            "Raid Monitor stopped"
+            "🔴 Raid Monitor stopped"
 
         startButton.isEnabled = true
         stopButton.isEnabled = false
@@ -226,7 +194,7 @@ class MainActivity : Activity() {
             if (Settings.canDrawOverlays(this)) {
                 "Ready to monitor incoming raids"
             } else {
-                "Allow floating-window permission first"
+                "Overlay permission required"
             }
     }
 
