@@ -1,100 +1,287 @@
 package com.tgm.raidwatcher
 
-import android.app.*
-import android.content.*
-import android.graphics.*
-import android.hardware.display.*
-import android.media.*
-import android.media.projection.*
-import android.os.*
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.media.ImageReader
+import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
+import android.os.Build
+import android.os.IBinder
 import android.provider.Settings
-import android.view.*
+import android.view.Gravity
+import android.view.WindowManager
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import java.util.concurrent.Executors
 
 class CaptureService : Service() {
-    companion object { const val CODE="code"; const val DATA="data" }
-    private var projection:MediaProjection?=null
-    private var display:VirtualDisplay?=null
-    private var reader:ImageReader?=null
-    private val exec=Executors.newSingleThreadExecutor()
-    private var last=0L
-    private var fingerprint=""
-    private lateinit var overlay:RaidOverlay
 
-    override fun onCreate(){
-        super.onCreate()
-        val nm=getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel("raid","Raid monitor",NotificationManager.IMPORTANCE_LOW))
-        overlay=RaidOverlay(this)
-        overlay.show("👀 Raid Watcher\nWaiting for an incoming raid…")
+    companion object {
+        const val CODE = "code"
+        const val DATA = "data"
+
+        private const val CHANNEL_ID = "raid_monitor"
+        private const val NOTIFICATION_ID = 1001
     }
 
-    override fun onStartCommand(i:Intent?,flags:Int,id:Int):Int{
-        startForeground(77,NotificationCompat.Builder(this,"raid")
-            .setSmallIcon(android.R.drawable.ic_menu_view)
-            .setContentTitle("TGM Raid Watcher")
-            .setContentText("Monitoring for incoming raids")
-            .setOngoing(true).build())
-        val code=i?.getIntExtra(CODE,-1) ?: return START_NOT_STICKY
-        val data=i.getParcelableExtra<Intent>(DATA) ?: return START_NOT_STICKY
-        projection=getSystemService(MediaProjectionManager::class.java).getMediaProjection(code,data)
-        capture()
+    private var projection: MediaProjection? = null
+    private var imageReader: ImageReader? = null
+    private var overlay: RaidOverlay? = null
+
+    override fun onCreate() {
+        super.onCreate()
+
+        createNotificationChannel()
+
+        overlay = RaidOverlay(this)
+    }
+
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int
+    ): Int {
+
+        try {
+            startForeground(
+                NOTIFICATION_ID,
+                createNotification()
+            )
+
+            if (intent == null) {
+                stopSelf()
+                return START_NOT_STICKY
+            }
+
+            val resultCode =
+                intent.getIntExtra(CODE, -1)
+
+            val resultData =
+                if (Build.VERSION.SDK_INT >= 33) {
+                    intent.getParcelableExtra(
+                        DATA,
+                        Intent::class.java
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(DATA)
+                }
+
+            if (resultCode == -1 || resultData == null) {
+                showMessage("❌ Screen capture permission missing")
+                stopSelf()
+                return START_NOT_STICKY
+            }
+
+            val manager =
+                getSystemService(
+                    MediaProjectionManager::class.java
+                )
+
+            projection =
+                manager.getMediaProjection(
+                    resultCode,
+                    resultData
+                )
+
+            if (projection == null) {
+                showMessage("❌ Could not start screen monitor")
+                stopSelf()
+                return START_NOT_STICKY
+            }
+
+            showMessage(
+                "👀 TGM Raid Watcher\n" +
+                "Monitoring is ON"
+            )
+
+        } catch (e: Exception) {
+
+            showMessage(
+                "❌ Monitor error\n${e.message ?: "Unknown error"}"
+            )
+
+            stopSelf()
+        }
+
         return START_NOT_STICKY
     }
 
-    private fun capture(){
-        val m=resources.displayMetrics
-        reader=ImageReader.newInstance(m.widthPixels,m.heightPixels,PixelFormat.RGBA_8888,2)
-        reader!!.setOnImageAvailableListener({r->
-            val now=SystemClock.elapsedRealtime()
-            if(now-last<900){r.acquireLatestImage()?.close();return@setOnImageAvailableListener}
-            last=now
-            val image=r.acquireLatestImage() ?: return@setOnImageAvailableListener
-            try{
-                val b=Bitmap.createBitmap(image.width,image.height,Bitmap.Config.ARGB_8888)
-                b.copyPixelsFromBuffer(image.planes[0].buffer)
-                TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-                    .process(InputImage.fromBitmap(b,0))
-                    .addOnSuccessListener(exec){ result->
-                        val p=RaidParser.parse(result.text)
-                        if(p.found && p.fingerprint!=fingerprint){fingerprint=p.fingerprint;overlay.show(p.display())}
-                        else if(!p.found && fingerprint.isNotEmpty()){fingerprint="";overlay.show("👀 Raid Watcher\nWaiting for an incoming raid…")}
-                    }
-            }finally{image.close()}
-        },Handler(Looper.getMainLooper()))
-        display=projection?.createVirtualDisplay("TGM Raid Watcher",m.widthPixels,m.heightPixels,m.densityDpi,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,reader!!.surface,null,null)
+    private fun createNotification(): Notification {
+        return NotificationCompat.Builder(
+            this,
+            CHANNEL_ID
+        )
+            .setSmallIcon(
+                android.R.drawable.ic_menu_view
+            )
+            .setContentTitle(
+                "TGM Raid Watcher"
+            )
+            .setContentText(
+                "Raid monitoring is active"
+            )
+            .setOngoing(true)
+            .setPriority(
+                NotificationCompat.PRIORITY_LOW
+            )
+            .build()
     }
 
-    override fun onDestroy(){
-        display?.release();reader?.close();projection?.stop();exec.shutdownNow()
-        if(::overlay.isInitialized)overlay.hide()
+    private fun createNotificationChannel() {
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+
+            val channel =
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "Raid Monitor",
+                    NotificationManager.IMPORTANCE_LOW
+                )
+
+            channel.description =
+                "TGM Raid Watcher monitoring"
+
+            val manager =
+                getSystemService(
+                    NotificationManager::class.java
+                )
+
+            manager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun showMessage(text: String) {
+
+        if (!Settings.canDrawOverlays(this)) {
+            return
+        }
+
+        overlay?.show(text)
+    }
+
+    override fun onDestroy() {
+
+        try {
+            imageReader?.close()
+            imageReader = null
+
+            projection?.stop()
+            projection = null
+
+            overlay?.hide()
+            overlay = null
+
+        } catch (_: Exception) {
+        }
+
         super.onDestroy()
     }
-    override fun onBind(i:Intent?):IBinder?=null
+
+    override fun onBind(intent: Intent?): IBinder? {
+        return null
+    }
 }
 
-class RaidOverlay(private val c:Context){
-    private var wm:WindowManager?=null
-    private var v:TextView?=null
-    fun show(s:String){
-        if(!Settings.canDrawOverlays(c))return
-        if(v==null){
-            wm=c.getSystemService(WindowManager::class.java)
-            v=TextView(c).apply{setTextColor(Color.WHITE);setBackgroundColor(0xDD111111.toInt());setPadding(20,16,20,16);textSize=15f}
-            val p=WindowManager.LayoutParams(400,WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
-                PixelFormat.TRANSLUCENT)
-            p.gravity=Gravity.TOP or Gravity.END;p.x=12;p.y=120
-            wm?.addView(v,p)
+
+class RaidOverlay(
+    private val context: Context
+) {
+
+    private var windowManager: WindowManager? = null
+    private var textView: TextView? = null
+
+    fun show(text: String) {
+
+        if (!Settings.canDrawOverlays(context)) {
+            return
         }
-        v?.text=s
+
+        if (textView == null) {
+
+            windowManager =
+                context.getSystemService(
+                    WindowManager::class.java
+                )
+
+            textView =
+                TextView(context).apply {
+
+                    setTextColor(Color.WHITE)
+
+                    setBackgroundColor(
+                        Color.argb(
+                            225,
+                            20,
+                            20,
+                            20
+                        )
+                    )
+
+                    setPadding(
+                        20,
+                        16,
+                        20,
+                        16
+                    )
+
+                    textSize = 16f
+
+                    elevation = 10f
+                }
+
+            val type =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_PHONE
+                }
+
+            val params =
+                WindowManager.LayoutParams(
+                    420,
+                    WindowManager.LayoutParams.WRAP_CONTENT,
+                    type,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                    PixelFormat.TRANSLUCENT
+                )
+
+            params.gravity =
+                Gravity.TOP or Gravity.END
+
+            params.x = 12
+            params.y = 120
+
+            try {
+                windowManager?.addView(
+                    textView,
+                    params
+                )
+            } catch (_: Exception) {
+                textView = null
+                return
+            }
+        }
+
+        textView?.text = text
     }
-    fun hide(){v?.let{runCatching{wm?.removeView(it)}};v=null}
+
+    fun hide() {
+
+        try {
+            textView?.let {
+                windowManager?.removeView(it)
+            }
+        } catch (_: Exception) {
+        }
+
+        textView = null
+    }
 }
