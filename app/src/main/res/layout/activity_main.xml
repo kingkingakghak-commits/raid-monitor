@@ -1,16 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
- android:layout_width="match_parent" android:layout_height="match_parent"
- android:orientation="vertical" android:padding="20dp">
- <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-  android:text="TGM Raid Watcher" android:textSize="28sp" android:textStyle="bold"/>
- <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-  android:layout_marginTop="8dp"
-  android:text="Bruiser • Hitmen/Sniper • Bikers • mixed raids"/>
- <Button android:id="@+id/startButton" android:layout_width="match_parent"
-  android:layout_height="wrap_content" android:layout_marginTop="24dp"
-  android:text="Start Raid Monitor"/>
- <TextView android:id="@+id/status" android:layout_width="match_parent"
-  android:layout_height="wrap_content" android:layout_marginTop="16dp"
-  android:text="Status: stopped"/>
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <TextView
+        android:id="@+id/titleText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="TGM Raid Watcher"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:paddingBottom="20dp" />
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Ready to monitor incoming raids"
+        android:textSize="18sp"
+        android:gravity="center"
+        android:padding="16dp" />
+
+    <Button
+        android:id="@+id/startButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="START RAID MONITOR"
+        android:textSize="17sp"
+        android:layout_marginTop="24dp" />
+
+    <Button
+        android:id="@+id/stopButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="STOP MONITOR"
+        android:textSize="17sp"
+        android:layout_marginTop="12dp" />
+
+    <TextView
+        android:id="@+id/infoText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Troops: Bruiser • Hitmen/Sniper • Bikers&#10;&#10;Raid timers: 5:00 and 10:00&#10;&#10;The monitor will display detected raid information in a floating window."
+        android:textSize="15sp"
+        android:paddingTop="30dp" />
+
 </LinearLayout>
