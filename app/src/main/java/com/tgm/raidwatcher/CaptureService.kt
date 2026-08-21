@@ -29,14 +29,14 @@ class CaptureService : Service() {
     }
 
     private var mediaProjection: MediaProjection? = null
-    private var overlay: RaidOverlay? = null
+    private var raidOverlay: RaidOverlay? = null
 
     override fun onCreate() {
         super.onCreate()
 
         createNotificationChannel()
 
-        overlay = RaidOverlay(this)
+        raidOverlay = RaidOverlay(this)
     }
 
     override fun onStartCommand(
@@ -46,21 +46,21 @@ class CaptureService : Service() {
     ): Int {
 
         try {
-
-            // Android requires the foreground notification first.
             startForeground(
                 NOTIFICATION_ID,
                 createNotification()
             )
 
             if (intent == null) {
-                showOverlay("❌ Monitor data missing")
+                showOverlay("Monitor data missing")
                 stopSelf()
                 return START_NOT_STICKY
             }
 
-            val resultCode =
-                intent.getIntExtra(CODE, -1)
+            val resultCode = intent.getIntExtra(
+                CODE,
+                -1
+            )
 
             val resultData: Intent? =
                 if (Build.VERSION.SDK_INT >= 33) {
@@ -73,14 +73,10 @@ class CaptureService : Service() {
                     intent.getParcelableExtra(DATA)
                 }
 
-            if (
-                resultCode == -1 ||
-                resultData == null
-            ) {
+            if (resultCode == -1 || resultData == null) {
                 showOverlay(
-                    "❌ Screen capture permission missing"
+                    "Screen capture permission missing"
                 )
-
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -97,28 +93,24 @@ class CaptureService : Service() {
                 )
 
             if (mediaProjection == null) {
-
                 showOverlay(
-                    "❌ Screen capture failed"
+                    "Screen capture failed"
                 )
-
                 stopSelf()
                 return START_NOT_STICKY
             }
 
-            // For now this confirms that the capture service
-            // and floating window are working.
             showOverlay(
-                "🟢 TGM RAID WATCHER\n\n" +
-                "Screen monitor: ON\n" +
-                "Waiting for raid..."
+                "TGM RAID WATCHER\n\n" +
+                    "Screen monitor: ON\n" +
+                    "Waiting for raid..."
             )
 
         } catch (e: Exception) {
 
             showOverlay(
-                "❌ Monitor error\n\n" +
-                (e.message ?: "Unknown error")
+                "Monitor error\n\n" +
+                    (e.message ?: "Unknown error")
             )
 
             stopSelf()
@@ -128,7 +120,165 @@ class CaptureService : Service() {
     }
 
     private fun createNotification(): Notification {
-
         return NotificationCompat.Builder(
             this,
             CHANNEL_ID
+        )
+            .setSmallIcon(
+                android.R.drawable.ic_menu_view
+            )
+            .setContentTitle(
+                "TGM Raid Watcher"
+            )
+            .setContentText(
+                "Raid monitor is running"
+            )
+            .setOngoing(true)
+            .setPriority(
+                NotificationCompat.PRIORITY_LOW
+            )
+            .build()
+    }
+
+    private fun createNotificationChannel() {
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "TGM Raid Watcher",
+                NotificationManager.IMPORTANCE_LOW
+            )
+
+            channel.description =
+                "TGM Raid Watcher screen monitoring"
+
+            val manager =
+                getSystemService(
+                    NotificationManager::class.java
+                )
+
+            manager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun showOverlay(message: String) {
+
+        if (!Settings.canDrawOverlays(this)) {
+            return
+        }
+
+        raidOverlay?.show(message)
+    }
+
+    override fun onDestroy() {
+
+        try {
+            raidOverlay?.hide()
+        } catch (_: Exception) {
+        }
+
+        try {
+            mediaProjection?.stop()
+        } catch (_: Exception) {
+        }
+
+        raidOverlay = null
+        mediaProjection = null
+
+        super.onDestroy()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? {
+        return null
+    }
+}
+
+private class RaidOverlay(
+    private val context: Context
+) {
+
+    private var windowManager: WindowManager? = null
+    private var textView: TextView? = null
+
+    fun show(message: String) {
+
+        if (!Settings.canDrawOverlays(context)) {
+            return
+        }
+
+        if (textView == null) {
+
+            windowManager =
+                context.getSystemService(
+                    Context.WINDOW_SERVICE
+                ) as WindowManager
+
+            textView = TextView(context).apply {
+                setTextColor(Color.WHITE)
+
+                setBackgroundColor(
+                    Color.rgb(25, 25, 25)
+                )
+
+                setPadding(
+                    24,
+                    18,
+                    24,
+                    18
+                )
+
+                textSize = 16f
+            }
+
+            val windowType =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_PHONE
+                }
+
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                windowType,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                PixelFormat.TRANSLUCENT
+            )
+
+            params.gravity =
+                Gravity.TOP or Gravity.CENTER_HORIZONTAL
+
+            params.x = 0
+            params.y = 120
+
+            try {
+                windowManager?.addView(
+                    textView,
+                    params
+                )
+            } catch (_: Exception) {
+                textView = null
+                windowManager = null
+                return
+            }
+        }
+
+        textView?.text = message
+    }
+
+    fun hide() {
+
+        try {
+            textView?.let {
+                windowManager?.removeView(it)
+            }
+        } catch (_: Exception) {
+        }
+
+        textView = null
+        windowManager = null
+    }
+}
