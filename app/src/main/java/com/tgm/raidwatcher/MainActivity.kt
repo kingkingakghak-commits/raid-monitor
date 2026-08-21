@@ -47,12 +47,11 @@ class MainActivity : Activity() {
 
     private fun startMonitor() {
 
-        // Step 1: request floating-window permission
         if (!Settings.canDrawOverlays(this)) {
 
             Toast.makeText(
                 this,
-                "Allow TGM Raid Watcher to display over other apps",
+                "Please allow display over other apps",
                 Toast.LENGTH_LONG
             ).show()
 
@@ -69,7 +68,6 @@ class MainActivity : Activity() {
             return
         }
 
-        // Step 2: request screen capture permission
         requestScreenCapture()
     }
 
@@ -93,8 +91,150 @@ class MainActivity : Activity() {
         } catch (e: Exception) {
 
             statusText.text =
-                "❌ Could not request screen capture\n${e.message}"
+                "Screen capture could not start"
 
             Toast.makeText(
                 this,
-                "Screen capture
+                "Screen capture error: ${e.message}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    @Deprecated("Deprecated in Android API")
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?
+    ) {
+        super.onActivityResult(
+            requestCode,
+            resultCode,
+            data
+        )
+
+        when (requestCode) {
+
+            OVERLAY_REQUEST -> {
+
+                if (Settings.canDrawOverlays(this)) {
+                    requestScreenCapture()
+                } else {
+                    statusText.text =
+                        "Floating-window permission is required"
+                }
+            }
+
+            SCREEN_CAPTURE_REQUEST -> {
+
+                if (
+                    resultCode == RESULT_OK &&
+                    data != null
+                ) {
+                    startCaptureService(
+                        resultCode,
+                        data
+                    )
+                } else {
+
+                    statusText.text =
+                        "Screen capture permission cancelled"
+                }
+            }
+        }
+    }
+
+    private fun startCaptureService(
+        resultCode: Int,
+        data: Intent
+    ) {
+
+        try {
+
+            val serviceIntent =
+                Intent(
+                    this,
+                    CaptureService::class.java
+                ).apply {
+
+                    putExtra(
+                        CaptureService.CODE,
+                        resultCode
+                    )
+
+                    putExtra(
+                        CaptureService.DATA,
+                        data
+                    )
+                }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+
+                ContextCompat.startForegroundService(
+                    this,
+                    serviceIntent
+                )
+
+            } else {
+
+                startService(serviceIntent)
+            }
+
+            statusText.text =
+                "Raid Monitor is running"
+
+            startButton.isEnabled = false
+            stopButton.isEnabled = true
+
+        } catch (e: Exception) {
+
+            statusText.text =
+                "Failed to start monitor"
+
+            Toast.makeText(
+                this,
+                "Monitor error: ${e.message}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private fun stopMonitor() {
+
+        try {
+
+            stopService(
+                Intent(
+                    this,
+                    CaptureService::class.java
+                )
+            )
+
+        } catch (_: Exception) {
+        }
+
+        statusText.text =
+            "Raid Monitor stopped"
+
+        startButton.isEnabled = true
+        stopButton.isEnabled = false
+    }
+
+    private fun updateStatus() {
+
+        statusText.text =
+            if (Settings.canDrawOverlays(this)) {
+                "Ready to monitor incoming raids"
+            } else {
+                "Allow floating-window permission first"
+            }
+    }
+
+    override fun onResume() {
+        super.onResume()
+
+        if (::statusText.isInitialized) {
+            updateStatus()
+        }
+    }
+}
